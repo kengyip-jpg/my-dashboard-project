@@ -1,7 +1,6 @@
+import { put } from '@vercel/blob';
 import { NextResponse } from 'next/server';
-import { openDashboardDb } from '@/lib/dashboarddb'; // 確保路徑與你的新 db 檔名一致
-import fs from 'fs';
-import path from 'path';
+import { openDashboardDb } from '@/lib/dashboarddb';
 
 export async function POST(request: Request) {
   try {
@@ -27,29 +26,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Forbidden: Only Normal Users can upload forms' }, { status: 403 });
     }
 
-    // 3. 處理檔案上傳
+    // 3. 處理檔案上傳 (升級為 Vercel Blob 雲端上傳 🚀)
     let attachmentUrl = '';
     if (file && file.size > 0) {
-      // 確保 public/uploads 資料夾存在
-      const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      // 防止檔名重複，加上時間戳記
-      const uniqueFileName = `${Date.now()}-${file.name}`;
-      const filePath = path.join(uploadDir, uniqueFileName);
+      // 呼叫 Vercel Blob 的 API 直接把檔案丟上雲端
+      // Vercel 會自動幫你處理檔名重複的問題
+      const blob = await put(file.name, file, {
+        access: 'public', // 設為公開，這樣前端才看得到圖片
+      });
       
-      // 將 File 物件轉成 Buffer 並寫入硬碟
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-      await fs.promises.writeFile(filePath, buffer);
-      
-      // 未來前端可以直接用這個網址存取圖片
-      attachmentUrl = `/uploads/${uniqueFileName}`;
+      // 直接拿到雲端的圖片 HTTPS 網址
+      attachmentUrl = blob.url; 
     }
 
-    // 4. 將事件寫入 SQLite 的 events 表格
+    // 4. 將事件寫入資料庫
     const result = await db.run(
       'INSERT INTO events (user_id, title, description, attachment_url, status) VALUES (?, ?, ?, ?, ?)',
       [user.id, title, description, attachmentUrl, 'pending']
@@ -58,7 +48,6 @@ export async function POST(request: Request) {
     const newEventId = result.lastID;
 
     // 5. 【重要連動】發送通知給 Manager
-    // 當 User 提交事件時，自動在 notifications 表格塞入一筆未讀資料
     await db.run(
       'INSERT INTO notifications (event_id, message, is_read) VALUES (?, ?, 0)',
       [newEventId, `New event submitted by ${user.name || email}: "${title}"`]
