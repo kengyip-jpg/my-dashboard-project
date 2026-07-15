@@ -126,7 +126,7 @@ export default function DashboardPage() {
               className="w-full py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition shadow-lg text-left px-6 flex justify-between items-center"
             >
               <span>🔵 Enter as Normal User</span>
-              <span className="text-xs bg-black/30 px-2 py-1 rounded">Form Submitter</span>
+              <span className="text-xs bg-black/30 px-2 py-1 rounded">Form Submitter testing</span>
             </button>
           </div>
         </div>
