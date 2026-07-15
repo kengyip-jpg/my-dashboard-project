@@ -110,7 +110,7 @@ export default function DashboardPage() {
               className="w-full py-4 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl transition shadow-lg text-left px-6 flex justify-between items-center"
             >
               <span>🔴 Enter as Admin</span>
-              <span className="text-xs bg-black/30 px-2 py-1 rounded">Full Control</span>
+              <span className="text-xs bg-black/30 px-2 py-1 rounded">Full Control test</span>
             </button>
 
             <button
