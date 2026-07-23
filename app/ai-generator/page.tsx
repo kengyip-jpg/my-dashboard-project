@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const ENVIRONMENTS = [
   { id: 'shop office', name: 'Shop office', cost: 1000 },
@@ -25,6 +25,14 @@ const FURNITURES = [
   { id: 'gaming setup', name: 'High-End RGB Gaming Setup', cost: 1800 }
 ];
 
+const PERSONAS = [
+  { id: 'none', name: 'Just the Room', icon: '🏠', desc: 'Focus purely on interior design' },
+  { id: 'urban_exec', name: 'Urban Executive', icon: '👨‍💼', desc: 'Modern, sharp, and professional' },
+  { id: 'zen_master', name: 'Zen Master', icon: '🧘‍♀️', desc: 'Calm, minimalist, and peaceful' },
+  { id: 'vacationer', name: 'The Vacationer', icon: '🏖️', desc: 'Relaxed, breezy, and joyful' },
+  { id: 'gamer', name: 'Pro Gamer', icon: '🎮', desc: 'Tech-savvy with neon vibes' }
+];
+
 const INITIAL_BUDGET = 10000;
 const MAX_GENERATIONS = 3;
 
@@ -32,21 +40,38 @@ export default function AiGeneratorPage() {
   const [selectedEnvId, setSelectedEnvId] = useState(ENVIRONMENTS[0].id);
   const [selectedFurnIds, setSelectedFurnIds] = useState<string[]>([FURNITURES[0].id]);
   const [description, setDescription] = useState('');
+  const [selectedPersonaId, setSelectedPersonaId] = useState(PERSONAS[0].id);
+
   const [loading, setLoading] = useState(false);
   const [resultImage, setResultImage] = useState('');
   const [usageCount, setUsageCount] = useState(0);
   const [errorMsg, setErrorMsg] = useState('');
-  
-  // 📝 新增狀態：用來控制下拉選單是打開還是關閉
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // 🛠️ 新增：開發者模式狀態
+  const [isDevMode, setIsDevMode] = useState(false);
+  
+  // 🎯 新增：用來鎖定結果區塊的 Ref
+  const resultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const savedCount = localStorage.getItem('ai-generator-usage');
     if (savedCount) setUsageCount(parseInt(savedCount, 10));
   }, []);
 
+  // 🚀 新增：當 resultImage 改變且不為載入中時，自動平滑滾動到結果區
+  useEffect(() => {
+    if (resultImage && !loading && resultRef.current) {
+      // 給一點點微小延遲讓 DOM 渲染完成後再滾動，體驗更順暢
+      setTimeout(() => {
+        resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+  }, [resultImage, loading]);
+
   const currentEnv = ENVIRONMENTS.find(e => e.id === selectedEnvId) || ENVIRONMENTS[0];
   const selectedFurns = FURNITURES.filter(f => selectedFurnIds.includes(f.id));
+  const activePersona = PERSONAS.find(p => p.id === selectedPersonaId) || PERSONAS[0];
   
   const furnituresCost = selectedFurns.reduce((sum, furn) => sum + furn.cost, 0);
   const totalCost = currentEnv.cost + furnituresCost;
@@ -69,7 +94,8 @@ export default function AiGeneratorPage() {
     setDescription('');
     setResultImage('');
     setErrorMsg('');
-    setIsDropdownOpen(false); // 重置時順便關閉選單
+    setIsDropdownOpen(false);
+    setSelectedPersonaId(PERSONAS[0].id);
   };
 
   const handleGenerate = async () => {
@@ -78,9 +104,29 @@ export default function AiGeneratorPage() {
     setLoading(true);
     setResultImage('');
     setErrorMsg('');
-    setIsDropdownOpen(false); // 開始生成時關閉選單，保持畫面整潔
+    setIsDropdownOpen(false);
     
     const furnitureNamesString = selectedFurns.map(f => f.name).join(', ');
+    let finalDescription = description;
+    if (activePersona.id !== 'none') {
+      finalDescription = `${description} The room features a person representing a ${activePersona.name} (${activePersona.desc}). They blend naturally into the environment.`;
+    }
+
+    // 🛠️ 開發者模式攔截邏輯
+    if (isDevMode) {
+      console.log("🛠️ Dev Mode Active: Skipping API call.");
+      console.log("Mock Payload:", { environment: currentEnv.name, furniture: furnitureNamesString, description: finalDescription });
+      
+      // 模擬網路延遲 2 秒，然後塞一張高畫質的假圖進去
+      setTimeout(() => {
+        setResultImage('https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?ixlib=rb-4.0.3&auto=format&fit=crop&w=1024&q=80'); 
+        const newCount = usageCount + 1;
+        setUsageCount(newCount);
+        localStorage.setItem('ai-generator-usage', newCount.toString());
+        setLoading(false);
+      }, 2000);
+      return; // 直接中斷，不執行下方的 fetch
+    }
 
     try {
       const response = await fetch('/api/generate-image', {
@@ -89,7 +135,7 @@ export default function AiGeneratorPage() {
         body: JSON.stringify({ 
           environment: currentEnv.name, 
           furniture: furnitureNamesString, 
-          description 
+          description: finalDescription,
         }),
       });
       const data = await response.json();
@@ -110,35 +156,6 @@ export default function AiGeneratorPage() {
     }
   };
 
-  const handleDownload = () => { /* 保持不變 */
-    const link = document.createElement('a');
-    link.href = resultImage;
-    link.download = 'my-dream-room.jpg';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleShare = async () => { /* 保持不變 */
-    try {
-      const base64Data = resultImage.split(',')[1];
-      const byteCharacters = atob(base64Data);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) byteNumbers[i] = byteCharacters.charCodeAt(i);
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: 'image/jpeg' });
-      const file = new File([blob], 'my-dream-room.jpg', { type: 'image/jpeg' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ title: 'My AI Interior Design', text: 'Look at this awesome room I designed within budget using AI!', files: [file] });
-      } else {
-        alert('Your browser does not support direct sharing. Please download the image and upload it to your social media!');
-      }
-    } catch (error) {
-      console.log('User cancelled the share or an error occurred.', error);
-    }
-  };
-
   const scrollToGenerator = () => {
     document.getElementById('generator-section')?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -146,32 +163,36 @@ export default function AiGeneratorPage() {
   return (
     <div className="font-sans min-h-screen bg-white">
       
-      {/* 第 1 區塊 & 第 2 區塊完全保持不變 */}
       <section className="bg-gradient-to-br from-blue-900 via-indigo-800 to-purple-900 text-white py-24 px-6 text-center shadow-xl">
         <div className="max-w-4xl mx-auto">
-          <span className="inline-block py-1 px-3 rounded-full bg-blue-500/30 text-blue-200 text-sm font-bold tracking-wider mb-6 border border-blue-400/50">LIMITED TIME CAMPAIGN</span>
-          <h1 className="text-5xl md:text-7xl font-extrabold mb-6 leading-tight">Build Your Dream Room.<br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400">Don't Break the Bank.</span></h1>
-          <p className="text-xl md:text-2xl text-indigo-200 mb-10 max-w-2xl mx-auto leading-relaxed">Take the $10,000 challenge! Select your environment, pick your premium furniture, and let our AI generate your masterpiece in seconds.</p>
+          <span className="inline-block py-1 px-3 rounded-full bg-blue-500/30 text-blue-200 text-sm font-bold tracking-wider mb-6 border border-blue-400/50">PREMIUM EXPERIENCE</span>
+          <h1 className="text-5xl md:text-7xl font-extrabold mb-6 leading-tight">Step Into Your Dream Room.<br /><span className="text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-orange-400">Literally.</span></h1>
+          <p className="text-xl md:text-2xl text-indigo-200 mb-10 max-w-2xl mx-auto leading-relaxed">Take the $10,000 challenge! Build your room, pick your persona, and let our AI bring your lifestyle to life.</p>
           <button onClick={scrollToGenerator} className="bg-white text-indigo-900 font-bold text-xl py-4 px-10 rounded-full shadow-[0_0_20px_rgba(255,255,255,0.3)] hover:shadow-[0_0_30px_rgba(255,255,255,0.6)] hover:scale-105 transition-all">Start Designing Now ✨</button>
         </div>
       </section>
 
+      {/* How It Works */}
       <section className="py-20 px-6 bg-gray-50 border-b border-gray-200">
-        <div className="max-w-5xl mx-auto text-center">
+        <div className="max-w-7xl mx-auto text-center">
           <h2 className="text-3xl font-bold text-gray-800 mb-12">How It Works</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100"><div className="text-5xl mb-4">💰</div><h3 className="text-xl font-bold text-gray-800 mb-2">1. Manage Budget</h3><p className="text-gray-600">You start with $10,000. Every environment and furniture piece costs money. Choose wisely!</p></div>
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100"><div className="text-5xl mb-4">🛋️</div><h3 className="text-xl font-bold text-gray-800 mb-2">2. Mix & Match</h3><p className="text-gray-600">Select multiple items and add custom details to make the room truly yours.</p></div>
-            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100"><div className="text-5xl mb-4">🎨</div><h3 className="text-xl font-bold text-gray-800 mb-2">3. AI Magic</h3><p className="text-gray-600">Click generate and watch our advanced AI engine bring your vision to life instantly.</p></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100"><div className="text-5xl mb-4">💰</div><h3 className="text-xl font-bold text-gray-800 mb-2">1. Manage Budget</h3><p className="text-gray-600">You start with $10,000. Choose wisely!</p></div>
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100"><div className="text-5xl mb-4">🛋️</div><h3 className="text-xl font-bold text-gray-800 mb-2">2. Mix & Match</h3><p className="text-gray-600">Select multiple items to build the room.</p></div>
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100"><div className="text-5xl mb-4">🎭</div><h3 className="text-xl font-bold text-gray-800 mb-2">3. Pick Persona</h3><p className="text-gray-600">Select the lifestyle avatar that best represents you.</p></div>
+            <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-pink-500"></div>
+              <div className="text-5xl mb-4">✨</div><h3 className="text-xl font-bold text-gray-800 mb-2">4. Submit via IG</h3><p className="text-gray-600">Share on Instagram using <span className="font-bold text-pink-600">#SPSetiaSpaces</span>!</p>
+            </div>
           </div>
         </div>
       </section>
 
       <section id="generator-section" className="py-20 px-6 bg-white">
-        <div className="max-w-4xl mx-auto p-8 bg-white rounded-3xl shadow-2xl border border-gray-100">
+        <div className="max-w-6xl mx-auto p-8 bg-white rounded-3xl shadow-2xl border border-gray-100">
           
           <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">AI Design Studio</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-3">AI Lifestyle Studio</h2>
             <p className="text-gray-500">You have 3 free generations. Make them count!</p>
           </div>
           
@@ -180,78 +201,72 @@ export default function AiGeneratorPage() {
             <span className="text-2xl">${INITIAL_BUDGET.toLocaleString()}</span>
           </div>
 
-          <div className={`p-4 rounded-xl font-bold mb-8 flex justify-between shadow-sm border ${isLimitReached ? 'bg-red-50 text-red-700 border-red-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
-            <span>Free Generations Used:</span><span>{usageCount} / {MAX_GENERATIONS}</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-8">
-            <div className="flex flex-col gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 mb-8">
+            <div className="lg:col-span-2 flex flex-col gap-8">
               
-              {/* 環境單選維持不變 */}
-              <div>
-                <label className="block mb-2 font-bold text-gray-700">1. Select Environment</label>
-                <select className="w-full p-4 border border-gray-300 rounded-xl text-black bg-white shadow-sm disabled:bg-gray-100 focus:ring-4 focus:ring-blue-100 transition-all" value={selectedEnvId} onChange={(e) => setSelectedEnvId(e.target.value)} disabled={isLimitReached || loading}>
-                  {ENVIRONMENTS.map(env => (
-                    <option key={env.id} value={env.id}>{env.name} (+${env.cost})</option>
-                  ))}
-                </select>
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block mb-2 font-bold text-gray-700">1. Select Environment</label>
+                  <select className="w-full p-4 border border-gray-300 rounded-xl text-black bg-white shadow-sm disabled:bg-gray-100 focus:ring-4 focus:ring-blue-100 transition-all" value={selectedEnvId} onChange={(e) => setSelectedEnvId(e.target.value)} disabled={isLimitReached || loading}>
+                    {ENVIRONMENTS.map(env => (
+                      <option key={env.id} value={env.id}>{env.name} (+${env.cost})</option>
+                    ))}
+                  </select>
+                </div>
 
-              {/* 📝 核心改動：多選家具變成「懸浮折疊選單」 */}
-              <div className="relative">
-                <label className="block mb-3 font-bold text-gray-700">2. Select Furnitures (Multiple)</label>
-                
-                {/* 這個按鈕是外觀，點擊用來展開/收合選單 */}
-                <button
-                  type="button"
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  disabled={isLimitReached || loading}
-                  className={`w-full p-4 border border-gray-300 rounded-xl text-left bg-white shadow-sm flex justify-between items-center transition-all ${
-                    (isLimitReached || loading) ? 'cursor-not-allowed opacity-60' : 'hover:border-blue-300 focus:ring-4 focus:ring-blue-100'
-                  }`}
-                >
-                  <span className="truncate text-gray-800 font-medium">
-                    {selectedFurnIds.length === 0 
-                      ? 'Select items...' 
-                      : `${selectedFurnIds.length} item(s) selected`}
-                  </span>
-                  <span className={`text-gray-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
-                </button>
-
-                {/* 絕對定位的下拉選單區塊 */}
-                {isDropdownOpen && !(isLimitReached || loading) && (
-                  <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
-                    <div className="p-2 flex flex-col gap-1">
-                      {FURNITURES.map(furn => (
-                        <label 
-                          key={furn.id} 
-                          className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-gray-50 ${
-                            selectedFurnIds.includes(furn.id) ? 'bg-blue-50 border border-blue-200' : 'border border-transparent'
-                          }`}
-                        >
-                          <input 
-                            type="checkbox" 
-                            className="w-5 h-5 text-blue-600 rounded" 
-                            checked={selectedFurnIds.includes(furn.id)} 
-                            onChange={() => handleFurnitureToggle(furn.id)} 
-                          />
-                          <span className="flex-1 text-gray-800 font-medium">{furn.name}</span>
-                          <span className="text-gray-500 font-bold">(+${furn.cost})</span>
-                        </label>
-                      ))}
+                <div className="relative">
+                  <label className="block mb-2 font-bold text-gray-700">2. Select Furnitures (Multiple)</label>
+                  <button type="button" onClick={() => setIsDropdownOpen(!isDropdownOpen)} disabled={isLimitReached || loading} className={`w-full p-4 border border-gray-300 rounded-xl text-left bg-white shadow-sm flex justify-between items-center transition-all ${(isLimitReached || loading) ? 'cursor-not-allowed opacity-60' : 'hover:border-blue-300 focus:ring-4 focus:ring-blue-100'}`}>
+                    <span className="truncate text-gray-800 font-medium">{selectedFurnIds.length === 0 ? 'Select items...' : `${selectedFurnIds.length} item(s) selected`}</span>
+                    <span className={`text-gray-500 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
+                  </button>
+                  {isDropdownOpen && !(isLimitReached || loading) && (
+                    <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                      <div className="p-2 flex flex-col gap-1">
+                        {FURNITURES.map(furn => (
+                          <label key={furn.id} className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all hover:bg-gray-50 ${selectedFurnIds.includes(furn.id) ? 'bg-blue-50 border border-blue-200' : 'border border-transparent'}`}>
+                            <input type="checkbox" className="w-5 h-5 text-blue-600 rounded" checked={selectedFurnIds.includes(furn.id)} onChange={() => handleFurnitureToggle(furn.id)} />
+                            <span className="flex-1 text-gray-800 font-medium">{furn.name}</span>
+                            <span className="text-gray-500 font-bold">(+${furn.cost})</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
 
               <div>
-                <label className="block mb-2 font-bold text-gray-700">3. Extra Details (Optional)</label>
-                <textarea className="w-full p-4 border border-gray-300 rounded-xl text-black disabled:bg-gray-100 focus:ring-4 focus:ring-blue-100 transition-all" placeholder="E.g., cinematic lighting, a sleeping cat..." value={description} onChange={(e) => setDescription(e.target.value)} rows={3} disabled={isLimitReached || loading} />
+                <label className="block mb-3 font-bold text-gray-700">3. Who Are You? (Select Persona)</label>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {PERSONAS.map((persona) => (
+                    <button
+                      key={persona.id}
+                      onClick={() => setSelectedPersonaId(persona.id)}
+                      disabled={isLimitReached || loading}
+                      className={`p-4 rounded-2xl border-2 transition-all flex flex-col items-center justify-center text-center gap-2 ${
+                        selectedPersonaId === persona.id 
+                          ? 'border-pink-500 bg-pink-50 shadow-md transform scale-[1.02]' 
+                          : 'border-gray-200 bg-white hover:border-pink-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="text-4xl">{persona.icon}</span>
+                      <span className={`font-bold text-sm ${selectedPersonaId === persona.id ? 'text-pink-700' : 'text-gray-700'}`}>
+                        {persona.name}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block mb-2 font-bold text-gray-700">4. Extra Details (Optional)</label>
+                <textarea className="w-full p-4 border border-gray-300 rounded-xl text-black disabled:bg-gray-100 focus:ring-4 focus:ring-blue-100 transition-all" placeholder="E.g., cinematic lighting, a sleeping cat..." value={description} onChange={(e) => setDescription(e.target.value)} rows={2} disabled={isLimitReached || loading} />
               </div>
             </div>
 
-            {/* 右側 Summary 維持不變 */}
-            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-8 shadow-inner flex flex-col justify-between">
+            {/* 右側 Summary */}
+            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-8 shadow-inner flex flex-col justify-between h-full">
               <div>
                 <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b-2 border-gray-200 pb-4">🧾 Order Summary</h2>
                 <div className="flex justify-between mb-4 text-gray-800 font-medium text-lg"><span>🏠 {currentEnv.name}</span><span>${currentEnv.cost}</span></div>
@@ -265,6 +280,15 @@ export default function AiGeneratorPage() {
                     <div className="text-gray-400 pl-6 italic">No furniture selected</div>
                   )}
                 </div>
+                
+                {activePersona.id !== 'none' && (
+                  <div className="mt-6 p-4 bg-pink-100 rounded-xl border border-pink-200">
+                    <span className="text-pink-800 font-bold block mb-1">🎭 Active Persona:</span>
+                    <span className="text-pink-700 text-sm flex items-center gap-2">
+                      {activePersona.icon} {activePersona.name}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="mt-8 pt-6 border-t-2 border-gray-300">
                 <div className="flex justify-between font-bold text-xl mb-3 text-gray-800"><span>Total Cost:</span><span>${totalCost.toLocaleString()}</span></div>
@@ -275,38 +299,35 @@ export default function AiGeneratorPage() {
 
           {errorMsg && <div className="mb-6 p-5 bg-red-50 text-red-700 border-l-4 border-red-500 rounded-r-lg font-bold">⚠️ {errorMsg}</div>}
 
-          <button onClick={handleGenerate} disabled={loading || isOverBudget || isNoFurnitureSelected || isLimitReached} className={`w-full font-bold py-5 rounded-2xl text-xl text-white shadow-xl transition-all flex justify-center items-center gap-3 ${isLimitReached ? 'bg-red-500 cursor-not-allowed' : (isOverBudget || isNoFurnitureSelected) ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 hover:scale-[1.02] active:scale-95'}`}>
-            {isLimitReached ? '❌ Limit Reached (3/3)' : loading ? (<><svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>AI is crafting your room...</>) : '✨ Generate My Design'}
+          <button onClick={handleGenerate} disabled={loading || isOverBudget || isNoFurnitureSelected || isLimitReached} className={`w-full font-bold py-5 rounded-2xl text-xl text-white shadow-xl transition-all flex justify-center items-center gap-3 ${isLimitReached ? 'bg-red-500 cursor-not-allowed' : (isOverBudget || isNoFurnitureSelected) ? 'bg-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-pink-500 to-orange-500 hover:from-pink-600 hover:to-orange-600 hover:scale-[1.02] active:scale-95'}`}>
+            {isLimitReached ? '❌ Limit Reached (3/3)' : loading ? (<><svg className="animate-spin h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Crafting Your Perfect Space... 🪄</>) : '✨ Generate My Room'}
           </button>
 
-          {/* 生成區與結果區維持不變 */}
-          {loading && (
-            <div className="mt-12 border-2 border-dashed border-gray-200 p-10 rounded-3xl bg-gray-50 flex flex-col items-center animate-pulse">
-              <div className="w-64 h-8 bg-gray-200 rounded-full mb-6"></div>
-              <div className="w-full max-w-2xl aspect-video bg-gray-200 rounded-2xl mb-6 flex items-center justify-center"><span className="text-gray-400 font-bold text-xl">Brewing AI Magic... 🪄</span></div>
-            </div>
-          )}
-
+          {/* 🎯 綁定 Ref 的生成結果區 */}
           {resultImage && !loading && (
-            <div className="mt-12 border border-gray-100 p-8 rounded-3xl bg-white shadow-[0_10px_40px_rgba(0,0,0,0.08)] flex flex-col items-center animate-fade-in-up">
-              <span className="inline-block py-1 px-3 rounded-full bg-green-100 text-green-700 text-sm font-bold mb-4">SUCCESS</span>
-              <h2 className="text-3xl font-extrabold mb-8 text-gray-900">Your Masterpiece</h2>
-              <img src={resultImage} alt="Generated Design" className="w-full max-w-3xl rounded-2xl shadow-lg mb-8 border border-gray-100" />
-              <div className="flex flex-col sm:flex-row gap-4 w-full max-w-3xl">
-                <button onClick={handleDownload} className="flex-1 bg-gray-900 hover:bg-black text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 transition-all">📥 Save Image</button>
-                <button onClick={handleShare} className="flex-1 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 shadow-lg transition-all">🚀 Share to IG/FB</button>
-                {!isLimitReached && (<button onClick={handleReset} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-2 transition-all">🔄 Start Over</button>)}
-              </div>
-            </div>
+             <div ref={resultRef} className="mt-12 border border-gray-100 p-8 rounded-3xl bg-white shadow-[0_10px_40px_rgba(0,0,0,0.08)] flex flex-col items-center animate-fade-in-up">
+               {isDevMode && <span className="mb-4 bg-yellow-200 text-yellow-800 text-xs font-bold px-3 py-1 rounded-full border border-yellow-400">⚠️ Developer Mode: Mock Image</span>}
+               <h2 className="text-3xl font-extrabold mb-8 text-gray-900">Your Masterpiece</h2>
+               <img src={resultImage} alt="Generated Design" className="w-full max-w-3xl rounded-2xl shadow-lg mb-8 border border-gray-100" />
+               <button onClick={handleReset} className="w-full max-w-md bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold py-4 px-6 rounded-xl transition-all">🔄 Start Over</button>
+             </div>
           )}
 
         </div>
       </section>
 
-      <footer className="bg-gray-900 text-gray-400 py-10 text-center">
-        <p className="mb-2">© 2026 AI Interior Designer Campaign. All rights reserved.</p>
-        <p className="text-sm">Powered by Google Nano Banana Pro 🍌</p>
-      </footer>
+      {/* 🛠️ 放再頁尾上方、極度低調的開發者開關 */}
+      <div className="bg-gray-100 text-center py-2 border-t border-gray-200 flex justify-center items-center gap-2">
+        <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors">
+          <input 
+            type="checkbox" 
+            checked={isDevMode} 
+            onChange={(e) => setIsDevMode(e.target.checked)} 
+            className="w-4 h-4 text-gray-600 rounded focus:ring-0 cursor-pointer"
+          />
+          Enable Developer Mode (Mock API)
+        </label>
+      </div>
 
     </div>
   );
